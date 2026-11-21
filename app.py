@@ -1,74 +1,162 @@
-"""Rupee Do — a tiny Gen Z banking demo. Sample data only, no real payments."""
+"""Rupee Do — one-page Gen Z banking demo. Sample data only, no real payments."""
 
+import inspect
 import math
 import random
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-# ---------------------------------------------------------------- page setup
-st.set_page_config(page_title="Rupee Do", page_icon="₹", layout="wide")
+# ---------------------------------------------------------------- 1. page setup
+st.set_page_config(page_title="Rupee Do", page_icon="₹", layout="centered")
 
-GREEN, YELLOW, RED = "#12B76A", "#F79009", "#F04438"   # our 🟢🟡🔴 theme
-PALETTE = [GREEN, YELLOW, RED, "#3B82F6", "#8B5CF6", "#14B8A6"]
-BUDGET = 12000   # default monthly budget (₹)
+G, Y, R = "#12B76A", "#F79009", "#F04438"          # our 🟢🟡🔴 theme
+GREY = "rgba(148,163,184,.5)"                      # for zero-spend days
+CATEGORIES = ["Food", "Shopping", "Transport", "Bills", "Study", "Fun", "Other"]
 
-# A little CSS to make the default Streamlit look nicer (and phone friendly)
-st.markdown(
-    """
-    <style>
-    .block-container {max-width: 920px; padding-top: 1.2rem;}
-    .hero {background: linear-gradient(135deg, #0f172a, #134e4a 60%, #065f46);
-           border-radius: 20px; padding: 20px 24px; color: #fff; margin-bottom: 18px;}
-    .hero h1 {font-size: 1.9rem; margin: 0; color: #fff; letter-spacing: -.5px;}
-    .hero p {margin: 4px 0 0; color: #d1fae5; font-size: .9rem;}
-    .card {background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
-           padding: 16px 18px; margin-bottom: 12px;}
-    .pill {display: inline-block; padding: 3px 10px; border-radius: 999px;
-           font-size: .8rem; font-weight: 600;}
-    .g {background: #e7f8ef; color: #067647;}
-    .y {background: #fff6e5; color: #b54708;}
-    .r {background: #fee4e2; color: #b42318;}
-    /* keep primary buttons in brand green, not Streamlit red */
-    .stButton > button[kind="primary"] {background: #12B76A; border-color: #12B76A;}
-    .stButton > button[kind="primary"]:hover {background: #0E9F5B; border-color: #0E9F5B;}
-    /* small screens (phones) */
-    @media (max-width: 640px) {
-      .hero {padding: 16px 18px; border-radius: 16px;}
-      .hero h1 {font-size: 1.45rem;}
-      .hero p {font-size: .78rem;}
-      .hero .logo {width: 42px; height: 42px; font-size: 22px;}
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Detect dark mode so our custom cards match Streamlit's own theme
+def _is_dark():
+    try:
+        kind = st.context.theme.type
+        if kind:
+            return kind == "dark"
+        hints = " ".join(str(v) for k, v in (st.context.headers or {}).items()
+                         if "color-scheme" in k.lower() or "theme" in k.lower())
+        return "dark" in hints.lower()
+    except Exception:
+        return False
+
+DARK = _is_dark()
+
+# Colours for our custom HTML cards (they flip with the theme)
+CARD = "rgba(255,255,255,.05)" if DARK else "#ffffff"
+LINE = "rgba(255,255,255,.10)" if DARK else "#e7ebf1"
+INK = "#e9eef6" if DARK else "#101828"
+SOFT = "#93a0b3" if DARK else "#667085"
+TINT = {"g": "rgba(18,183,106,.15)", "y": "rgba(247,144,9,.16)", "r": "rgba(240,68,56,.15)"}
+TXT = {"g": "#34D399" if DARK else "#067647",
+       "y": "#FBBF24" if DARK else "#B54708",
+       "r": "#F87171" if DARK else "#B42318"}
+
+st.markdown(f"""
+<style>
+  .block-container {{padding-top: 1.2rem; padding-bottom: 3rem; max-width: 780px;}}
+
+  /* gradient hero banner, green → yellow */
+  .rd-hero {{background: linear-gradient(135deg, #0E9F5B 0%, #34C463 45%, #F7C948 100%);
+            border-radius: 22px; padding: 20px 22px; color: #06301f; margin-bottom: 16px;}}
+  .rd-hero .row {{display: flex; align-items: center; gap: 12px; flex-wrap: nowrap;}}
+  .rd-hero .coin {{flex: 0 0 auto; font-size: 2rem; line-height: 1;}}
+  .rd-hero h1 {{margin: 0; font-size: 2rem; letter-spacing: -.8px; color: #06301f;
+               white-space: nowrap; line-height: 1.1;}}
+  .rd-hero p {{margin: 6px 0 0; font-size: .9rem; font-weight: 500; opacity: .85;}}
+  @media (max-width: 480px) {{
+    .rd-hero {{padding: 16px 18px;}}
+    .rd-hero h1 {{font-size: 1.6rem;}}
+    .rd-hero .coin {{font-size: 1.5rem;}}
+    .rd-hero p {{font-size: .78rem;}}
+    .rd-big {{font-size: 1.32rem;}}
+    .rd-stat {{padding: 10px 11px; border-radius: 14px;}}
+    .rd-stat .rd-lab {{font-size: .58rem; letter-spacing: .03em;}}
+    .rd-stat .rd-sub {{font-size: .66rem;}}
+    .rd-stat .rd-badge {{font-size: .6rem; padding: 2px 7px; margin-top: 5px;}}
+    .rd-h {{font-size: 1.02rem; margin-top: 20px;}}
+  }}
+
+  /* rounded cards */
+  .rd-stat, .rd-card {{background: {CARD}; border: 1px solid {LINE};
+                       border-radius: 18px; padding: 15px 17px; margin-bottom: 10px;}}
+  .rd-g {{background: {TINT['g']}; border-color: rgba(18,183,106,.35);}}
+  .rd-y {{background: {TINT['y']}; border-color: rgba(247,144,9,.35);}}
+  .rd-r {{background: {TINT['r']}; border-color: rgba(240,68,56,.35);}}
+
+  .rd-lab {{font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+            text-transform: uppercase; color: {SOFT}; margin-bottom: 2px;}}
+  .rd-big {{font-size: 1.75rem; font-weight: 800; letter-spacing: -.5px;
+            color: {INK}; line-height: 1.15;}}
+  .rd-sub {{font-size: .82rem; color: {SOFT}; margin-top: 2px;}}
+  .rd-green {{color: {TXT['g']};}} .rd-yellow {{color: {TXT['y']};}}
+  .rd-red {{color: {TXT['r']};}}
+
+  .rd-badge {{display: inline-block; padding: 3px 10px; border-radius: 999px;
+              font-size: .74rem; font-weight: 700; margin-top: 8px;}}
+  .rd-badge.g {{background: {TINT['g']}; color: {TXT['g']};}}
+  .rd-badge.y {{background: {TINT['y']}; color: {TXT['y']};}}
+  .rd-badge.r {{background: {TINT['r']}; color: {TXT['r']};}}
+
+  /* thin section heading + divider */
+  .rd-h {{font-size: 1.18rem; font-weight: 800; color: {INK}; margin: 26px 0 4px;}}
+  .rd-div {{border: none; border-top: 1px solid {LINE}; margin: 2px 0 14px;}}
+
+  /* our own chunky progress bars */
+  .rd-bar {{background: {LINE}; border-radius: 999px; height: 14px; overflow: hidden;
+            margin: 10px 0 6px;}}
+  .rd-fill {{height: 100%; border-radius: 999px;}}
+
+  .rd-quote {{font-size: 1.02rem; font-weight: 600; color: {INK}; line-height: 1.45;}}
+
+  /* keep buttons brand-green even if the theme file is missing */
+  .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {{
+      background: #12B76A; border-color: #12B76A; color: #fff;}}
+  .stButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {{
+      background: #0E9F5B; border-color: #0E9F5B;}}
+  .rd-soon {{min-height: 120px;}}
+</style>
+""", unsafe_allow_html=True)
 
 
+# ---------------------------------------------------------------- 2. helpers
 def rupees(x):
-    """Format a number as rupees, e.g. 1214.5 -> ₹1,214.50"""
+    """1234.5 -> '₹1,234.50', 1234.0 -> '₹1,234'"""
     x = round(float(x), 2)
     return f"₹{x:,.0f}" if x.is_integer() else f"₹{x:,.2f}"
 
 
-def bar(value, maximum, colour):
-    """Draw a simple rounded progress bar."""
-    pct = min(value / maximum, 1.0) * 100 if maximum else 0
-    st.markdown(
-        f"""<div style="background:#eef0f3;border-radius:999px;height:14px;
-                    margin:6px 0 10px;overflow:hidden">
-              <div style="width:{pct:.0f}%;height:100%;background:{colour};
-                          border-radius:999px"></div>
-            </div>""",
-        unsafe_allow_html=True,
+def stretch():
+    """Charts/widgets fill the column. New Streamlit renamed this kwarg."""
+    sig = inspect.signature(st.plotly_chart).parameters
+    return {"width": "stretch"} if "width" in sig else {"use_container_width": True}
+
+
+def head(emoji, title):
+    """Short section heading + thin divider."""
+    st.markdown(f'<div class="rd-h">{emoji} {title}</div><hr class="rd-div">',
+                unsafe_allow_html=True)
+
+
+def bar(pct, colour, height=14):
+    """Rounded progress bar in plain HTML."""
+    pct = max(0, min(pct, 100))
+    st.markdown(f'<div class="rd-bar" style="height:{height}px">'
+                f'<div class="rd-fill" style="width:{pct:.0f}%;background:{colour}">'
+                f'</div></div>', unsafe_allow_html=True)
+
+
+def status(ratio):
+    """🟢 safe / 🟡 close / 🔴 over, from a spend ÷ budget ratio."""
+    if ratio <= 0.75:
+        return "🟢", "Safe", "g", G
+    if ratio <= 1:
+        return "🟡", "Close", "y", Y
+    return "🔴", "Over", "r", R
+
+
+def pretty(fig, height=290):
+    """Transparent + theme-aware plotly layout."""
+    fig.update_layout(
+        template="plotly_dark" if DARK else "plotly_white",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=6, r=6, t=26, b=6),
+        font=dict(color=INK, size=12),
+        height=height,
     )
+    return fig
 
 
-# ---------------------------------------------------------------- sample data
-# Dates are relative to today, so two transactions always show up as "today".
-today = pd.Timestamp.today().normalize()
-rows = [
+# ---------------------------------------------------------------- 3. sample data
+BASE_ROWS = [  # (days ago, merchant, category, amount)
     (0, "Zomato", "Food", 386), (0, "Uber", "Transport", 248),
     (1, "Starbucks", "Food", 341), (1, "BookMyShow", "Fun", 520),
     (2, "Myntra", "Shopping", 1499), (3, "Jio recharge", "Bills", 299),
@@ -78,266 +166,295 @@ rows = [
     (15, "Decathlon", "Shopping", 1249), (18, "Cafe Coffee Day", "Food", 287),
     (21, "Electricity bill", "Bills", 860),
 ]
-txns = pd.DataFrame(rows, columns=["days_ago", "Merchant", "Category", "Amount"])
-txns["Today"] = txns["days_ago"] == 0
-txns["Date"] = (today - pd.to_timedelta(txns["days_ago"], "D")).dt.strftime("%d %b")
-# Round each amount UP to the next ₹10; the gap is the spare change
-txns["Round-up"] = [round(math.ceil(a / 10) * 10 - a, 2) for a in txns["Amount"]]
+CARRY_OVER = 1180.0   # spare change saved last month (a demo head start)
 
-spent = txns["Amount"].sum()
-today_spent = txns.loc[txns["Today"], "Amount"].sum()
-monthly_roundups = txns["Round-up"].sum()
-days_covered = int(txns["days_ago"].max()) + 1
+# ---- memory that survives clicks
+st.session_state.setdefault("extra", [])          # expenses added by the user
+st.session_state.setdefault("transferred", 0.0)   # money moved to the pot
+st.session_state.setdefault("celebrated", None)   # goal we already cheered for
+st.session_state.setdefault("tip", "Small savings every day become big savings every year.")
 
-# ---------------------------------------------------------------- demo memory
-CARRY_OVER = 1180.0   # spare change already saved last month (head start for demos)
+today = pd.Timestamp.today().normalize()
+df = pd.DataFrame(BASE_ROWS + st.session_state.extra,
+                  columns=["days_ago", "Merchant", "Category", "Amount"])
+df["Amount"] = pd.to_numeric(df["Amount"])
+df["Round-up"] = df["Amount"].apply(lambda a: round(math.ceil(a / 10) * 10 - a, 2))
+df["Date"] = today - pd.to_timedelta(df["days_ago"], "D")
 
-if "savings" not in st.session_state:
-    st.session_state.savings = round(CARRY_OVER + monthly_roundups, 2)
-if "pot" not in st.session_state:
-    st.session_state.pot = 0.0
-if "tip" not in st.session_state:
-    st.session_state.tip = "Small amounts saved daily become large amounts saved yearly."
+spent = df["Amount"].sum()
+today_spent = df.loc[df["days_ago"] == 0, "Amount"].sum()
+roundups = df["Round-up"].sum()
+days_covered = max(int(df["days_ago"].max()) + 1, 1)
 
-total_saved = st.session_state.savings + st.session_state.pot
+jar = round(CARRY_OVER + roundups - st.session_state.transferred, 2)  # spare change now
+pot = round(st.session_state.transferred, 2)                          # moved to pot
+total_saved = round(jar + pot, 2)                                     # both are yours
+daily_avg = spent / days_covered
+buffer_days = total_saved / daily_avg if daily_avg else 0
 
-# ---------------------------------------------------------------- sidebar nav
+# ---- one-time toast after an action (shown on the next run)
+flash = st.session_state.pop("flash", None)
+
+# ---------------------------------------------------------------- 4. sidebar (settings only)
 with st.sidebar:
-    st.markdown("### ₹ Rupee Do")
-    st.caption("Demo bank for Gen Z · sample data only")
-    page = st.radio(
-        "Navigate",
-        ["🏠 Home", "🪙 Round-off savings", "🎯 Goal tracker", "🚦 Spending status",
-         "🥧 Expense chart", "🛟 Emergency buffer", "😹 Money tips",
-         "👨‍👩‍👧 Parent mode", "🚧 Coming soon"],
-        label_visibility="collapsed",
-    )
+    st.markdown("#### ₹ Rupee Do")
+    st.caption("Settings")
+    budget = st.slider("💸 Monthly budget", 2000, 50000, 12000, step=500, format="₹%d")
     st.divider()
-    if st.button("🔄 Reset demo"):
+    parent_on = st.toggle("👨‍👩‍👧 Parent mode", value=True)
+    daily_limit = st.slider("🚦 Daily limit", 100, 3000, 600, step=50, format="₹%d",
+                            disabled=not parent_on)
+    st.divider()
+    if st.button("🔄 Reset demo", **stretch()):
         st.session_state.clear()
         st.rerun()
-    st.caption("No real payments. Ever. 🙅")
+    st.caption("Demo only · no real payments 🙅")
 
-# ---------------------------------------------------------------- header
-st.markdown(
-    """
-    <div class="hero">
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-        <div class="logo" style="flex:0 0 auto;width:52px;height:52px;border-radius:16px;
-                    background:#12B76A;display:flex;align-items:center;
-                    justify-content:center;font-size:28px;font-weight:800;
-                    color:#052e22">₹</div>
-        <div style="flex:1;min-width:0">
-          <h1>Rupee Do</h1>
-          <p>Spare change, goals and green-yellow-red vibes. Demo only — no real payments.</p>
-        </div>
-      </div>
+budget_ratio = spent / budget
+icon, word, cls, colour = status(budget_ratio)
+day_ratio = today_spent / daily_limit if daily_limit else 0
+
+# ---------------------------------------------------------------- 5. hero
+st.markdown("""
+<div class="rd-hero">
+  <div class="row">
+    <div class="coin">₹</div>
+    <div>
+      <h1>Rupee Do</h1>
+      <p>Spare change · goals · 🟢🟡🔴 vibes</p>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-# ================================================================ pages
-if page == "🏠 Home":
-    budget = st.session_state.get("budget", BUDGET)
-    c1, c2 = st.columns(2)
-    c1.metric("Spare change", rupees(st.session_state.savings))
-    c2.metric("Savings pot", rupees(st.session_state.pot))
-    c3, c4 = st.columns(2)
-    c3.metric("Spent this month", rupees(spent), f"of {rupees(budget)} budget",
-              delta_color="off")
-    c4.metric("Buffer days", f"{total_saved / (spent / days_covered):.1f} days")
+# ---- 3 big stat cards
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.markdown(f"""<div class="rd-stat">
+        <div class="rd-lab">💸 Spent</div>
+        <div class="rd-big">{rupees(spent)}</div>
+        <div class="rd-sub">of {rupees(budget)}</div>
+        <span class="rd-badge {cls}">{icon} {budget_ratio*100:.0f}%</span>
+    </div>""", unsafe_allow_html=True)
+with c2:
+    st.markdown(f"""<div class="rd-stat rd-g">
+        <div class="rd-lab">🪙 Savings</div>
+        <div class="rd-big rd-green">{rupees(total_saved)}</div>
+        <div class="rd-sub">jar + pot</div>
+        <span class="rd-badge g">pot {rupees(pot)}</span>
+    </div>""", unsafe_allow_html=True)
+with c3:
+    st.markdown(f"""<div class="rd-stat rd-{cls}">
+        <div class="rd-lab">🚦 Budget</div>
+        <div class="rd-big rd-{'green' if cls=='g' else 'yellow' if cls=='y' else 'red'}">{word}</div>
+        <div class="rd-sub">{rupees(max(budget-spent, 0))} left</div>
+        <span class="rd-badge {cls}">{icon} {budget_ratio*100:.0f}%</span>
+    </div>""", unsafe_allow_html=True)
 
-    ratio = spent / budget
-    label, css = (("Safe 🟢", "g") if ratio <= 0.75 else
-                  ("Close to the limit 🟡", "y") if ratio <= 1 else
-                  ("Over the limit 🔴", "r"))
-    st.markdown(f'<div class="card">Monthly budget status: '
-                f'<span class="pill {css}">{label}</span></div>',
-                unsafe_allow_html=True)
-    st.caption("Use the sidebar to explore 👉 (on mobile, tap the » arrow top-left).")
+if flash:
+    st.toast(flash, icon="✅")
 
-elif page == "🪙 Round-off savings":
-    st.subheader("🪙 Round-off savings")
-    st.caption("Every spend is rounded up to the next ₹10. The difference is your spare change.")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("This month's round-ups", rupees(monthly_roundups))
-    c2.metric("Spare change balance", rupees(st.session_state.savings))
-    c3.metric("Savings pot", rupees(st.session_state.pot))
-    st.caption(f"Balance includes {rupees(CARRY_OVER)} carried over from last month.")
-
-    st.dataframe(
-        txns[["Date", "Merchant", "Category", "Amount", "Round-up"]],
-        hide_index=True,
-        height=340,
-        column_config={
-            "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.0f"),
-            "Round-up": st.column_config.NumberColumn("Round-up (₹)", format="₹%.2f"),
-        },
-    )
-
-    just_moved = st.session_state.pop("just_moved", False)
-    if just_moved:  # message for the run AFTER the transfer click
-        st.success(f"🎉 Transferred {rupees(st.session_state.pop('moved', 0))} "
-                   "to your savings pot!")
-        st.balloons()
-
-    if st.button(f"➡️ Transfer {rupees(st.session_state.savings)} to savings pot",
-                 type="primary", disabled=st.session_state.savings < 1000):
-        st.session_state.pot += st.session_state.savings
-        st.session_state.moved = st.session_state.savings
-        st.session_state.savings = 0.0
-        st.session_state.just_moved = True
+# ---------------------------------------------------------------- 6. quick add expense
+head("➕", "Quick add")
+with st.form("add_expense", clear_on_submit=True):
+    f1, f2 = st.columns(2)
+    amount = f1.number_input("Amount (₹)", 1, 20000, 250, step=10)
+    category = f2.selectbox("Category", CATEGORIES)
+    merchant = st.text_input("Merchant", placeholder="e.g. Chai Point")
+    if st.form_submit_button("Add expense", type="primary", **stretch()):
+        # store as a tuple, same shape as BASE_ROWS
+        st.session_state.extra.append((0, merchant.strip() or "Quick add",
+                                       category, float(amount)))
+        st.session_state.flash = f"Added {rupees(amount)} · {category}"
         st.rerun()
-    if st.session_state.savings < 1000 and not just_moved:
-        st.caption("Transfer unlocks when spare change crosses ₹1,000.")
+st.caption("Every number, chart and colour on this page updates instantly.")
 
-elif page == "🎯 Goal tracker":
-    st.subheader("🎯 Saving goal tracker")
-    goal_name = st.text_input("Goal name", "A new phone 📱")
-    goal_amount = st.number_input("Goal amount (₹)", min_value=500,
-                                  max_value=200000, value=5000, step=500)
-    progress = min(total_saved / goal_amount, 1.0)
-    st.progress(progress, text=f"{rupees(total_saved)} of {rupees(goal_amount)} "
-                               f"· {progress * 100:.0f}%")
-    if total_saved >= goal_amount:
-        st.success(f"Goal reached 🎉 — “{goal_name}” is officially funded (in demo money).")
+# ---------------------------------------------------------------- 7. coin jar
+head("🫙", "Coin jar")
+jar_pct = jar / 1000 * 100
+jar_colour = G if jar >= 1000 else Y
+jar_note = "Ready to transfer 🎉" if jar >= 1000 else f"{rupees(1000 - jar)} to go"
+st.markdown(f"""<div class="rd-card">
+    <div class="rd-lab">Round-off savings</div>
+    <div class="rd-big">{rupees(jar)} <span class="rd-sub">/ ₹1,000</span></div>
+    <div class="rd-sub">{jar_note}</div></div>""", unsafe_allow_html=True)
+bar(jar_pct, jar_colour)
+st.caption(f"₹{roundups:.0f} from round-ups this month + {rupees(CARRY_OVER)} carried over − "
+           f"{rupees(pot)} transferred.")
+
+t1, t2 = st.columns([1, 1])
+with t1:
+    if st.button(f"🪙 Move {rupees(jar)} to pot", type="primary", **stretch(),
+                 disabled=jar < 1000):
+        st.session_state.transferred += jar
+        st.session_state.flash = f"Moved {rupees(jar)} to your savings pot!"
         st.balloons()
+        st.rerun()
+with t2:
+    st.caption("Unlocks at ₹1,000." if jar < 1000 else "Transfer unlocked.")
+
+with st.expander(f"📄 All {len(df)} transactions"):
+    st.dataframe(df[["Date", "Merchant", "Category", "Amount", "Round-up"]]
+                 .sort_values("Date", ascending=False), hide_index=True, height=280,
+                 **stretch(),
+                 column_config={"Amount": st.column_config.NumberColumn(format="₹%d"),
+                                "Round-up": st.column_config.NumberColumn(format="₹%.2f"),
+                                "Date": st.column_config.DateColumn(format="DD MMM")})
+
+# ---------------------------------------------------------------- 8. goal
+head("🎯", "Goal")
+g1, g2 = st.columns([1.2, 1])
+goal_name = g1.text_input("Goal name", "New phone 📱", label_visibility="collapsed",
+                          placeholder="Goal name")
+goal_amount = g2.number_input("Goal amount", 500, 200000, 5000, step=500,
+                              label_visibility="collapsed")
+goal_pct = min(total_saved / goal_amount * 100, 100)
+reached = total_saved >= goal_amount
+st.markdown(f"""<div class="rd-card {'rd-g' if reached else ''}">
+    <div class="rd-lab">{goal_name or 'Goal'}</div>
+    <div class="rd-big">{rupees(min(total_saved, goal_amount))}
+      <span class="rd-sub">/ {rupees(goal_amount)}</span></div>
+    <div class="rd-sub">{goal_pct:.0f}% funded</div></div>""", unsafe_allow_html=True)
+bar(goal_pct, G if reached else Y)
+if reached:
+    st.success("Goal reached 🎉")
+    if st.session_state.celebrated != goal_amount:      # cheer only once per goal
+        st.session_state.celebrated = goal_amount
+        st.balloons()
+        st.toast("Goal reached 🎉", icon="🎯")
+else:
+    st.caption(f"{rupees(goal_amount - total_saved)} to go.")
+
+# ---------------------------------------------------------------- 9. spending status
+head("🚦", "Spending")
+st.markdown(f"""<div class="rd-card rd-{cls}">
+    <div class="rd-lab">Monthly budget</div>
+    <div class="rd-big rd-{'green' if cls=='g' else 'yellow' if cls=='y' else 'red'}">
+      {icon} {word}</div>
+    <div class="rd-sub">{rupees(spent)} of {rupees(budget)} · {budget_ratio*100:.0f}% used</div>
+    </div>""", unsafe_allow_html=True)
+bar(budget_ratio * 100, colour)
+zone = ("🟢 under 75%" if cls == "g" else "🟡 75–100%" if cls == "y" else "🔴 over 100%")
+st.caption(f"Zones: 🟢 safe · 🟡 close · 🔴 over — you are {zone}.")
+
+# ---------------------------------------------------------------- 10. charts
+head("🥧", "Where it goes")
+ch1, ch2 = st.columns(2)
+with ch1:
+    by_cat = df.groupby("Category", as_index=False)["Amount"].sum()
+    donut = px.pie(by_cat, names="Category", values="Amount", hole=0.55,
+                   color_discrete_sequence=[G, Y, R, "#3B82F6", "#8B5CF6", "#14B8A6"])
+    donut.update_traces(textinfo="percent", textposition="inside", sort=False)
+    donut.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.15, font=dict(size=11)))
+    st.plotly_chart(pretty(donut), config={"displayModeBar": False}, **stretch())
+with ch2:
+    days = pd.date_range(today - pd.Timedelta(days=13), today)
+    daily = df.groupby("Date")["Amount"].sum().reindex(days, fill_value=0).reset_index()
+    daily.columns = ["Date", "Amount"]
+    daily["col"] = [GREY if a == 0 else
+                    G if a < 0.8 * daily_limit else
+                    Y if a <= daily_limit else R
+                    for a in daily["Amount"]]
+    line = go.Figure(go.Bar(x=daily["Date"], y=daily["Amount"],
+                            marker_color=daily["col"], marker_line_width=0))
+    line.add_hline(y=daily_limit, line_dash="dot", line_color=TXT["r"],
+                   annotation_text="limit", annotation_font_size=10)
+    line.update_layout(title=dict(text="Last 14 days", font=dict(size=13)), showlegend=False)
+    line.update_xaxes(tickformat="%d %b", showgrid=False)
+    line.update_yaxes(gridcolor="rgba(128,128,128,.15)")
+    st.plotly_chart(pretty(line), config={"displayModeBar": False}, **stretch())
+st.caption(f"Bar colour vs your {rupees(daily_limit)} daily limit: 🟢 under · 🟡 close · 🔴 over.")
+
+# ---------------------------------------------------------------- 11. emergency buffer (gauge)
+head("🛟", "Emergency buffer")
+gauge_colour = G if buffer_days >= 7 else Y if buffer_days >= 3 else R
+fig = go.Figure(go.Indicator(
+    mode="gauge+number",
+    value=round(buffer_days, 1),
+    domain={"x": [0, 1], "y": [0, 1]},
+    number={"suffix": " days", "font": {"size": 28, "color": INK}},
+    gauge={
+        "axis": {"range": [0, 30], "tickwidth": 0, "tickcolor": SOFT,
+                 "tickfont": {"size": 10, "color": SOFT}},
+        "bar": {"color": gauge_colour, "thickness": 0.28},
+        "bgcolor": "rgba(0,0,0,0)", "borderwidth": 0,
+        "steps": [
+            {"range": [0, 3], "color": TINT["r"]},
+            {"range": [3, 7], "color": TINT["y"]},
+            {"range": [7, 30], "color": TINT["g"]},
+        ],
+        "threshold": {"line": {"color": gauge_colour, "width": 3},
+                      "thickness": 0.8, "value": buffer_days},
+    },
+))
+fig.update_layout(margin=dict(l=10, r=10, t=10, b=0))
+st.plotly_chart(pretty(fig, height=260), config={"displayModeBar": False}, **stretch())
+st.caption(f"{rupees(total_saved)} saved ÷ {rupees(daily_avg)}/day average spend. "
+           "🔴 0–3 days · 🟡 3–7 · 🟢 7–30. Target: 30.")
+
+# ---------------------------------------------------------------- 12. parent mode
+head("👨‍👩‍👧", "Parent mode")
+if parent_on:
+    d_icon, d_word, d_cls, d_colour = status(day_ratio)
+    if today_spent > daily_limit:
+        warn = "🚨 Daily limit crossed — a demo alert went to your parent."
     else:
-        left = goal_amount - total_saved
-        weeks = math.ceil(left / 500)
-        st.info(f"{rupees(left)} to go for “{goal_name}”. "
-                f"Save ₹500 a week and you'll get there in about {weeks} weeks.")
-
-elif page == "🚦 Spending status":
-    st.subheader("🚦 Spending status")
-    budget = st.number_input("Monthly budget (₹)", min_value=2000, max_value=50000,
-                             value=BUDGET, step=500, key="budget")
-    ratio = spent / budget
-    if ratio <= 0.75:
-        label, colour, css = "Safe 🟢", GREEN, "g"
-        note = "You're cruising. Keep it up."
-    elif ratio <= 1.0:
-        label, colour, css = "Close to the limit 🟡", YELLOW, "y"
-        note = "Tread carefully — the limit is near."
+        warn = f"✅ Inside today's limit · {rupees(daily_limit - today_spent)} left"
+    st.markdown(f"""<div class="rd-card rd-{d_cls}">
+        <div class="rd-lab">Today</div>
+        <div class="rd-big rd-{'green' if d_cls=='g' else 'yellow' if d_cls=='y' else 'red'}">
+          {rupees(today_spent)} <span class="rd-sub">/ {rupees(daily_limit)}</span></div>
+        <span class="rd-badge {d_cls}">{d_icon} {d_word}</span></div>""",
+                unsafe_allow_html=True)
+    bar(day_ratio * 100, d_colour)
+    if today_spent > daily_limit:
+        st.error(warn)
     else:
-        label, colour, css = "Over the limit 🔴", RED, "r"
-        note = f"You've crossed the budget by {rupees(spent - budget)}."
+        st.caption(warn + " Change the daily limit in the sidebar.")
+else:
+    st.caption("Parent mode is off — turn it on in the sidebar to set a daily limit.")
 
-    st.markdown(f"""<div class="card">
-        <span class="pill {css}">{label}</span>
-        <div style="background:#eef0f3;border-radius:999px;height:16px;margin-top:12px;
-                    overflow:hidden">
-          <div style="width:{min(ratio, 1) * 100:.0f}%;height:100%;background:{colour};
-                      border-radius:999px"></div>
-        </div>
-        <p style="margin:10px 0 0;color:#475467;font-size:.9rem">
-          {rupees(spent)} spent of a {rupees(budget)} budget ({ratio * 100:.0f}% used)
-        </p></div>""", unsafe_allow_html=True)
-    st.write(note)
+# ---------------------------------------------------------------- 13. tips
+head("😹", "Tip")
+tips = [
+    "Your bank balance called. It's not angry, just disappointed.",
+    "Swiggy isn't a food app, it's a savings leak with great UI.",
+    "Budget = telling your money where to go instead of wondering where it went.",
+    "That ₹249 in-app purchase, 40 times, is a flight to Goa.",
+    "Compound interest is the only friend that gets richer while you sleep.",
+    "A free trial is a subscription with a countdown you will forget.",
+    "Retail therapy works. The bill is the side effect.",
+    "Round-ups: ₹4 here and ₹6 there is literally how phones get bought.",
+    "Your UPI PIN is not a personality. Don't share it.",
+    "Investing ₹500 today beats 'next month' for the 47th time.",
+]
+with st.expander("😹 One-liners & captions", expanded=True):
+    tip_tab, all_tab = st.tabs(["🎲 Random tip", "📋 All tips"])
+    with tip_tab:
+        if st.button("Give me a tip", type="primary", **stretch()):
+            st.session_state.tip = random.choice(tips)
+            st.toast("Fresh tip served 😹", icon="🍳")
+            st.balloons()
+        st.markdown(f'<div class="rd-card"><div class="rd-quote">“{st.session_state.tip}”</div>'
+                    f'</div>', unsafe_allow_html=True)
+    with all_tab:
+        for t in tips:
+            st.markdown(f'<div class="rd-sub" style="margin:6px 0">• {t}</div>',
+                        unsafe_allow_html=True)
 
-elif page == "🥧 Expense chart":
-    st.subheader("🥧 Where the money went")
-    by_cat = (txns.groupby("Category", as_index=False)["Amount"].sum()
-              .sort_values("Amount", ascending=False))
-    kind = st.radio("Chart type", ["Pie", "Bar"], horizontal=True,
-                    label_visibility="collapsed")
-    if kind == "Pie":
-        fig = px.pie(by_cat, names="Category", values="Amount", hole=0.45,
-                     color_discrete_sequence=PALETTE)
-    else:
-        fig = px.bar(by_cat, x="Category", y="Amount", color="Category",
-                     color_discrete_sequence=PALETTE, text_auto=".2s")
-        fig.update_layout(showlegend=False)
-    fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=380)
-    st.plotly_chart(fig)
+# ---------------------------------------------------------------- 14. coming soon
+head("🚧", "Coming soon")
+soon = [("📈", "SIP investing"), ("✈️", "Travel tickets"), ("🎁", "Gift cards"),
+        ("🔐", "Biometric login"), ("🧊", "Auto freeze"), ("🔁", "Autopay"),
+        ("📱", "Tap to pay")]
+s1, s2 = st.columns(2)
+for i, (emoji, name) in enumerate(soon):
+    with (s1 if i % 2 == 0 else s2):
+        st.markdown(f"""<div class="rd-card rd-soon">
+            <div style="font-size:1.6rem">{emoji}</div>
+            <div style="font-weight:700;color:{INK};margin:4px 0 8px">{name}</div>
+            <span class="rd-badge y">🚧 Soon</span></div>""", unsafe_allow_html=True)
 
-    top = by_cat.iloc[0]
-    st.caption(f"Biggest category: **{top['Category']}** at {rupees(top['Amount'])} "
-               f"({top['Amount'] / spent * 100:.0f}% of all spending).")
-
-elif page == "🛟 Emergency buffer":
-    st.subheader("🛟 Emergency buffer")
-    daily_avg = spent / days_covered
-    days = total_saved / daily_avg if daily_avg else 0
-    colour, label, css = ((GREEN, "Comfortable 🟢", "g") if days >= 7 else
-                          (YELLOW, "Tight 🟡", "y") if days >= 3 else
-                          (RED, "Risky 🔴", "r"))
-    st.markdown(
-        f'<div class="card"><span class="pill {css}">{label}</span>'
-        f'<h2 style="margin:10px 0 0;color:{colour}">{days:.1f} days</h2>'
-        '<p style="margin:0;color:#475467;font-size:.9rem">of expenses your savings can cover</p>'
-        '</div>', unsafe_allow_html=True)
-    bar(days, 30, colour)
-    st.caption(f"Based on {rupees(total_saved)} saved and your average spend of "
-               f"{rupees(daily_avg)}/day over the last {days_covered} days. "
-               "Goal: 30 days of cover.")
-
-elif page == "😹 Money tips":
-    st.subheader("😹 Money tips, but funny")
-    tips = [
-        "Your bank balance called. It's not angry, just disappointed.",
-        "Swiggy isn't a food app, it's a savings leak with great UI.",
-        "Budget = telling your money where to go instead of wondering where it went.",
-        "That ₹249 in-app purchase? Do it 40 times and it's a flight to Goa.",
-        "Compound interest is the only friend that gets richer while you sleep. Don't ghost it.",
-        "A free trial is a subscription with a countdown timer you will definitely forget.",
-        "Retail therapy works. The bill is the side effect.",
-        "Never spend money you don't have, to impress people who don't care.",
-        "Round-up savings: ₹4 here and ₹6 there is literally how phones get bought.",
-        "Your UPI PIN is not a personality. Please don't share it.",
-        "Investing ₹500 today beats 'I'll start next month' for the 47th time.",
-    ]
-    if st.button("Show me a tip 💸", type="primary"):
-        st.session_state.tip = random.choice(tips)
-    st.markdown(f'<div class="card" style="font-size:1.05rem">'
-                f'“{st.session_state.tip}”</div>', unsafe_allow_html=True)
-    st.caption(f"Tap again — there are {len(tips)} of these.")
-
-elif page == "👨‍👩‍👧 Parent mode":
-    st.subheader("👨‍👩‍👧 Parent mode")
-    parent_on = st.toggle("Parent mode is ON")
-    if not parent_on:
-        st.info("Parent mode is off. Toggle it on to set a daily spending limit.")
-    else:
-        limit = st.number_input("Daily spending limit (₹)", min_value=100,
-                                max_value=5000, value=500, step=50)
-        if today_spent > limit:
-            colour, label, css = RED, "Daily limit crossed 🔴", "r"
-        elif today_spent > 0.8 * limit:
-            colour, label, css = YELLOW, "Close to today's limit 🟡", "y"
-        else:
-            colour, label, css = GREEN, "Within today's limit 🟢", "g"
-        st.markdown(f'<div class="card"><span class="pill {css}">{label}</span></div>',
-                    unsafe_allow_html=True)
-        bar(today_spent, limit, colour)
-        st.write(f"Spent today: **{rupees(today_spent)}** of a {rupees(limit)} limit.")
-        if today_spent > limit:
-            st.error("🚨 Daily limit crossed! A demo alert has been sent to your parent.")
-        else:
-            st.success("All good — you're inside today's limit.")
-        st.caption("Demo alert only. No real parents were notified. 😌")
-
-elif page == "🚧 Coming soon":
-    st.subheader("🚧 Coming soon")
-    items = [
-        ("📈", "SIP investing", "Start a SIP from ₹500, right inside the app."),
-        ("✈️", "Travel tickets", "Book trains, buses and flights in one place."),
-        ("🎁", "Gift cards", "Send ₹100 gift cards to friends without leaving the group chat."),
-        ("🔐", "Biometric login", "Face or fingerprint login — no more typing PINs."),
-        ("🧊", "Auto freeze/unfreeze", "Instantly freeze your card when you smell a scam."),
-        ("🔁", "Autopay", "Rent, recharge and subscriptions paid automatically."),
-        ("📱", "Tap to pay", "Pay by tapping your phone at the counter."),
-    ]
-    cols = st.columns(2)
-    for i, (icon, name, blurb) in enumerate(items):
-        with cols[i % 2]:
-            st.markdown(
-                f"""<div class="card" style="min-height:132px">
-                <div style="font-size:1.5rem">{icon}</div>
-                <b>{name}</b><br>
-                <span style="color:#667085;font-size:.85rem">{blurb}</span><br>
-                <span class="pill y" style="margin-top:10px">🚧 Coming soon</span>
-                </div>""",
-                unsafe_allow_html=True,
-            )
+st.markdown(f'<hr class="rd-div" style="margin-top:26px">'
+            f'<div class="rd-sub" style="text-align:center">Rupee Do · demo bank for Gen Z · '
+            f'sample data only, no real payments</div>', unsafe_allow_html=True)
