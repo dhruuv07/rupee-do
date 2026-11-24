@@ -102,6 +102,15 @@ st.markdown(f"""
   .v-gate .t {{font-weight: 800; color: {INK}; font-size: .95rem; margin-top: 8px;}}
   .v-gate .d {{color: {SOFT}; font-size: .78rem; margin-top: 3px;}}
 
+  /* ---- the vault panel sits under the icon row ---- */
+  .st-key-vault_panel {{
+      background: {CARD2};
+      border: 1px solid {LINE};
+      border-radius: 24px;
+      padding: 14px 16px 6px;
+      margin: 6px 0 18px;
+      box-shadow: {SHADOW};}}
+
   /* ---- section titles ---- */
   .v-h {{font-size: 1.02rem; font-weight: 800; color: {INK}; margin: 22px 0 10px;}}
 
@@ -185,14 +194,24 @@ st.markdown(f"""
      Streamlit stacks sibling columns below ~640px, so pin the row itself. */
   [data-testid="stHorizontalBlock"]:has([class*="st-key-ra_"]) {{
       display: flex !important; flex-wrap: nowrap !important;
-      gap: 4px !important; align-items: flex-start !important;}}
+      gap: 4px !important; align-items: stretch !important;}}
   [data-testid="stHorizontalBlock"]:has([class*="st-key-ra_"])
       > [data-testid="stColumn"] {{
       flex: 1 1 0 !important; width: auto !important; min-width: 0 !important;}}
+  [class*="st-key-ra_"] {{display: block !important; height: 54px !important;
+                        min-height: 54px !important;}}
+  [class*="st-key-ra_"] [data-testid="stButton"] {{
+      height: 54px !important; min-height: 54px !important;
+      display: flex !important; justify-content: center !important;}}
+  [class*="st-key-ra_"] [data-testid="stElementContainer"] {{
+      height: 54px !important; min-height: 54px !important;}}
   [class*="st-key-ra_"] button {{
       width: 54px !important; height: 54px !important;
       min-height: 54px !important; font-size: 1.35rem !important;}}
   @media (max-width: 480px) {{
+    [class*="st-key-ra_"], [class*="st-key-ra_"] [data-testid="stButton"],
+    [class*="st-key-ra_"] [data-testid="stElementContainer"] {{
+        height: 44px !important; min-height: 44px !important;}}
     [class*="st-key-ra_"] button {{
         width: 44px !important; height: 44px !important;
         min-height: 44px !important; font-size: 1.1rem !important;}}
@@ -503,12 +522,11 @@ def add_row(name, amount, direction="out", spare=0.0, note="", kind="txn"):
 
 
 def show_vault():
-    """The whole vault section: tab 1 SIP, tab 2 RD, tab 3 transfer to bank."""
-    st.markdown('<div class="v-h">🛡️ Vault actions</div>', unsafe_allow_html=True)
+    """The three vault tabs: SIP, recurring deposit, transfer to bank."""
     st.caption("Demo only, no real investing or deposits.")
 
-    tab_sip, tab_rd, tab_bank = st.tabs(["📈 SIP", "🔁 Recurring deposit",
-                                         "🏦 To bank account"])
+    tab_sip, tab_rd, tab_bank = st.tabs(["📈 SIP", "🔁 Recurring Deposit",
+                                         "🏦 Transfer to bank"])
 
     # ------------------------------------------------------------ A. SIP
     with tab_sip:
@@ -665,6 +683,65 @@ def show_vault():
                 move_to_bank(amount)
 
 
+# ================================================================ 7b. the vault panel.
+# Shown under the icon row only when session state `vault_open` is True.
+# Streamlit has st.dialog, but it always draws in front of the whole page and
+# needs widgets inside it to be wrapped in a function that cannot also render
+# nested tabs and buttons reliably; an inline container matches "opens right
+# below the icon row" better and keeps the history visible underneath.
+def vault_panel():
+    with st.container(key="vault_panel"):
+        # ---- header row: title + the ✖ Close button
+        t1, t2 = st.columns([3, 1])
+        with t1:
+            st.markdown('<div class="v-h" style="margin:6px 0 0">🛡️ Your vault</div>',
+                        unsafe_allow_html=True)
+        with t2:
+            if st.button("✖ Close", key="vault_close", **stretch()):
+                ss.vault_open = False
+                st.rerun()
+
+        # ---- passcode first, if this session has not opened the vault yet
+        if not ss.u_vault:
+            gate("🛡️", "Your vault is locked",
+                 "Enter the passcode to open SIPs, deposits and transfers")
+            if ss.pop("wipe_vault", False):
+                ss.code_vault = ""
+            code = st.text_input("Passcode", type="password", placeholder="••••",
+                                 max_chars=4, key="code_vault",
+                                 label_visibility="collapsed")
+            if st.button("Unlock", type="primary", key="unlock_vault", **stretch()):
+                if code == PASSCODE:
+                    ss.u_vault = True
+                    ss.wipe_vault = True          # wiped at the top of the next run
+                    ss.flash = "Vault unlocked 🔓"
+                    st.rerun()
+                else:
+                    st.error("❌ Wrong passcode. Try again.")
+            st.caption("Demo passcode: **0000**")
+            return
+
+        # ---- big green card with the vault balance
+        vault_pct = min(ss.vault / VAULT_TARGET * 100, 100)
+        st.markdown(f"""<div class="v-vault">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <div class="v-label">Round-off vault</div>
+                <div class="v-vault-amt">{rupees(ss.vault)}</div>
+                <div class="v-sub">{len([r for r in ss.history if r['Kind'] == 'vault'])}
+                  round-ups saved</div>
+              </div>
+              <div style="font-size:1.8rem">🛡️</div>
+            </div>
+            <div class="v-bar"><div class="v-bar-fill" style="width:{vault_pct:.0f}%"></div></div>
+            <div class="v-sub">{rupees(ss.vault)} of {rupees(VAULT_TARGET)} ·
+              {vault_pct:.0f}%</div>
+        </div>""", unsafe_allow_html=True)
+
+        # ---- the three action tabs, each with its form and its list
+        show_vault()
+
+
 # ================================================================ 8. HOME
 if page == "🏠 Home":
 
@@ -691,15 +768,19 @@ if page == "🏠 Home":
         ss.flash = "Showing the transaction history"
 
     def go_vault():
-        ss.u_vault = True
+        # only opens the panel — the panel itself asks for the passcode
         ss.vault_open = True
-        ss.flash = "Vault unlocked 🔓"
 
     a1, a2, a3, a4 = st.columns(4)
     action(a1, "💳", "Check balance", "bal", go_balance)
     action(a2, "📤", "Bank transfer", "send", go_transfer)
     action(a3, "🧾", "History", "hist", go_history)
     action(a4, "🛡️", "Vault", "vault", go_vault)
+
+    # ---- the vault panel: sits right under the icon row, only when opened.
+    # Everything below it (balance, transfer, history) simply moves down.
+    if ss.vault_open:
+        vault_panel()
 
     # ---- 1. CHECK BALANCE (needs the passcode) ----
     st.markdown('<div class="v-h">💳 Check balance</div>', unsafe_allow_html=True)
@@ -797,54 +878,6 @@ if page == "🏠 Home":
 
     # ---- 3. TRANSACTION HISTORY (no passcode) ----
     show_history()
-
-    # ---- 4. VAULT (needs the passcode) ----
-    st.markdown('<div class="v-h">🛡️ Vault</div>', unsafe_allow_html=True)
-    if not ss.u_vault:
-        gate("🛡️", "Your vault is locked",
-             "Enter the passcode to open SIPs, deposits and transfers")
-        if ss.pop("wipe_vault", False):
-            ss.code_vault = ""
-        code = st.text_input("Passcode", type="password", placeholder="••••",
-                             max_chars=4, key="code_vault",
-                             label_visibility="collapsed")
-        if st.button("Unlock", type="primary", key="unlock_vault", **stretch()):
-            if code == PASSCODE:
-                ss.u_vault = True
-                ss.wipe_vault = True
-                ss.vault_open = True
-                ss.flash = "Vault unlocked 🔓"
-                st.rerun()
-            else:
-                st.error("❌ Wrong passcode. Try again.")
-        st.caption("Demo passcode: **0000**")
-    else:
-        vault_pct = min(ss.vault / VAULT_TARGET * 100, 100)
-        st.markdown(f"""<div class="v-vault">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start">
-              <div>
-                <div class="v-label">Round-off vault</div>
-                <div class="v-vault-amt">{rupees(ss.vault)}</div>
-                <div class="v-sub">{len([r for r in ss.history if r['Kind'] == 'vault'])}
-                  round-ups saved</div>
-              </div>
-              <div style="font-size:1.8rem">🛡️</div>
-            </div>
-            <div class="v-bar"><div class="v-bar-fill" style="width:{vault_pct:.0f}%"></div></div>
-            <div class="v-sub">{rupees(ss.vault)} of {rupees(VAULT_TARGET)} ·
-              {vault_pct:.0f}%</div>
-        </div>""", unsafe_allow_html=True)
-
-        if not ss.get("vault_open"):
-            if st.button("🛡️ Open vault actions", type="primary", key="vopen",
-                         **stretch()):
-                ss.vault_open = True
-                st.rerun()
-        else:
-            show_vault()
-            if st.button("Close vault actions", key="vclose", **stretch()):
-                ss.vault_open = False
-                st.rerun()
 
 
 # ================================================================ 9. PERSONAL DETAILS (passcode)
