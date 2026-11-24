@@ -1,21 +1,20 @@
-"""Rupee Do — a 3-page Gen Z banking demo. Sample data only, no real payments."""
+"""Self Healing Vault — a small demo banking app. Sample data only, no real payments."""
 
+import datetime as dt
 import inspect
-import math
-import random
+import re
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# ---------------------------------------------------------------- page setup
-st.set_page_config(page_title="Rupee Do", page_icon="₹", layout="centered")
+# ================================================================ 1. page setup
+st.set_page_config(page_title="Self Healing Vault", page_icon="🛡️", layout="centered")
 
-G, Y, R = "#12B76A", "#F79009", "#F04438"                  # 🟢🟡🔴 status
-BLUE, PURPLE, PINK, ORANGE = "#3B82F6", "#8B5CF6", "#EC4899", "#F97316"
-BRIGHT = [G, Y, R, BLUE, PURPLE, PINK, "#14B8A6"]          # bright chart palette
-CATEGORIES = ["Food", "Shopping", "Transport", "Bills", "Study", "Fun", "Other"]
+# Bright Google Pay-ish accent palette
+BLUE, GREEN, YELLOW, RED = "#1A73E8", "#1AA260", "#F9AB00", "#EA4335"
+PURPLE, GRAY = "#7B61FF", "#5F6368"
+PASSCODE = "0000"          # the demo passcode
 
 
 def _is_dark():
@@ -33,464 +32,489 @@ def _is_dark():
 
 DARK = _is_dark()
 
-# Colours picked once, so every card stays readable in both themes
-INK = "#EAF0F7" if DARK else "#101828"          # main text
-SOFT = "#9AA7B8" if DARK else "#667085"         # small labels
-CARD = "rgba(255,255,255,.07)" if DARK else "rgba(255,255,255,.80)"
-LINE = "rgba(255,255,255,.13)" if DARK else "rgba(16,24,40,.07)"
-SHADOW = "0 8px 24px rgba(0,0,0,.38)" if DARK else "0 8px 24px rgba(16,24,40,.07)"
-BG = ("linear-gradient(160deg,#0A1220 0%,#0C1A17 45%,#121024 100%)" if DARK else
-      "linear-gradient(160deg,#EFFBF3 0%,#FFFBEC 45%,#F3F5FF 100%)")
-TINT = {"g": "18,183,106", "y": "247,144,9", "r": "240,68,56",
-        "b": "59,130,246", "p": "139,92,246", "o": "249,115,22", "k": "236,72,153"}
-TXT = {"g": "#34D399" if DARK else "#067647", "y": "#FBBF24" if DARK else "#B54708",
-       "r": "#F87171" if DARK else "#B42318", "b": "#60A5FA" if DARK else "#1D4ED8",
-       "p": "#A78BFA" if DARK else "#6D28D9", "o": "#FB923C" if DARK else "#C2410C",
-       "k": "#F472B6" if DARK else "#BE185D"}
-
-# Tinted gradient background for every tone (works on light and dark)
-TONES = "\n".join(
-    f'.tone-{k} {{background: linear-gradient(135deg, rgba({v},.22), rgba({v},.06)); '
-    f'border-color: rgba({v},.42);}}'
-    for k, v in TINT.items()
-)
+# Colours chosen once so every card is readable in light AND dark mode
+INK = "#E8EAED" if DARK else "#202124"          # main text
+SOFT = "#9AA0A6" if DARK else "#5F6368"         # secondary text
+CARD = "#1F2228" if DARK else "#FFFFFF"         # card background
+CARD2 = "#282B33" if DARK else "#F8F9FA"        # soft inner card
+LINE = "rgba(255,255,255,.10)" if DARK else "rgba(60,64,67,.12)"
+SHADOW = "0 2px 10px rgba(0,0,0,.45)" if DARK else "0 2px 10px rgba(60,64,67,.10)"
+PAGE = "#14161A" if DARK else "#FFFFFF"
 
 st.markdown(f"""
 <style>
-  /* soft gradient page background instead of plain black / white */
-  .stApp, [data-testid="stAppViewContainer"] {{background: {BG} !important;}}
-  .block-container {{max-width: 820px; padding-top: 1rem; padding-bottom: 3rem;}}
+  /* ---- page shell: looks like a phone app ---- */
+  .stApp {{background: {PAGE};}}
+  /* Streamlit's fixed toolbar is ~60px tall; push content clear of it */
+  .block-container {{max-width: 620px; padding-top: 4.4rem !important;
+                    padding-bottom: 3rem;}}
+  [data-testid="stSidebar"] > div:first-child {{padding-top: 4rem !important;}}
 
-  /* ---------- banners ---------- */
-  .rd-brand {{background: linear-gradient(120deg, #0E9F5B 0%, #34C463 45%, #F7C948 100%);
-             border-radius: 20px; padding: 18px 20px; color: #06301f;
-             box-shadow: {SHADOW}; margin-bottom: 12px;}}
-  .rd-brand .row {{display: flex; align-items: center; gap: 10px;}}
-  .rd-brand h1 {{margin: 0; font-size: 1.75rem; letter-spacing: -.7px; color: #06301f;
-                white-space: nowrap;}}
-  .rd-brand p {{margin: 4px 0 0; font-size: .86rem; font-weight: 500; opacity: .82;}}
+  /* ---- header ---- */
+  .vault-head {{display: block; padding: 4px 2px 16px; margin: 0; min-height: 44px;}}
+  .vault-head .mark {{float: left; width: 40px; height: 40px; margin-right: 11px;
+                     line-height: 0;}}
+  .vault-head .mark svg {{display: block; width: 40px; height: 40px;}}
+  .vault-head .name {{font-size: 1.16rem; font-weight: 800; color: {INK};
+                     letter-spacing: -.35px; line-height: 1.25; margin: 0;}}
+  .vault-head .tag {{font-size: .72rem; color: {SOFT}; margin: 0; line-height: 1.25;}}
+  .vault-head::after {{content: ""; display: block; clear: both;}}
 
-  .rd-page {{border-radius: 18px; padding: 16px 20px; color: #fff;
-            box-shadow: {SHADOW}; margin-bottom: 16px;}}
-  .rd-page .t {{font-size: 1.3rem; font-weight: 800; letter-spacing: -.4px;}}
-  .rd-page .s {{font-size: .82rem; opacity: .9; margin-top: 2px;}}
-  .pg-money {{background: linear-gradient(120deg, #0E9F5B, #34C463 70%, #A3E635);}}
-  .pg-where {{background: linear-gradient(120deg, #4F46E5, #8B5CF6 55%, #EC4899);}}
-  .pg-soon  {{background: linear-gradient(120deg, #F97316, #F43F5E 60%, #EC4899);}}
-
-  /* ---------- cards ---------- */
-  .rd-card, .rd-stat {{border-radius: 18px; padding: 15px 17px; margin-bottom: 12px;
-       background: {CARD}; border: 1px solid {LINE}; box-shadow: {SHADOW};
-       backdrop-filter: blur(8px);}}
-  .rd-lab {{font-size: .7rem; font-weight: 800; letter-spacing: .08em;
+  /* ---- cards ---- */
+  .v-card {{background: {CARD}; border: 1px solid {LINE}; border-radius: 22px;
+           padding: 20px; margin-bottom: 14px; box-shadow: {SHADOW};}}
+  .v-soft {{background: {CARD2}; border-radius: 18px; padding: 14px 16px;}}
+  .v-label {{font-size: .72rem; font-weight: 700; letter-spacing: .07em;
             text-transform: uppercase; color: {SOFT};}}
-  .rd-big {{font-size: 1.65rem; font-weight: 800; letter-spacing: -.5px;
-            color: {INK}; line-height: 1.2;}}
-  .rd-sub {{font-size: .8rem; color: {SOFT}; margin-top: 2px;}}
-  .rd-badge {{display: inline-block; padding: 3px 10px; border-radius: 999px;
-              font-size: .72rem; font-weight: 800; margin-top: 8px;}}
-  .green {{color: {TXT['g']};}} .yellow {{color: {TXT['y']};}} .red {{color: {TXT['r']};}}
-  .blue {{color: {TXT['b']};}} .purple {{color: {TXT['p']};}} .orange {{color: {TXT['o']};}}
-  .rd-badge.g {{background: rgba(18,183,106,.18); color: {TXT['g']};}}
-  .rd-badge.y {{background: rgba(247,144,9,.20); color: {TXT['y']};}}
-  .rd-badge.r {{background: rgba(240,68,56,.18); color: {TXT['r']};}}
-  .rd-badge.b {{background: rgba(59,130,246,.20); color: {TXT['b']};}}
-  .rd-badge.p {{background: rgba(139,92,246,.20); color: {TXT['p']};}}
-  .rd-badge.o {{background: rgba(249,115,22,.20); color: {TXT['o']};}}
-  .rd-badge.k {{background: rgba(236,72,153,.20); color: {TXT['k']};}}
+  .v-hero {{font-size: 2.35rem; font-weight: 800; letter-spacing: -1.2px;
+           color: {INK}; line-height: 1.1; margin: 2px 0 0;}}
+  .v-sub {{font-size: .84rem; color: {SOFT}; margin-top: 4px;}}
+  .v-amount {{font-size: 1.02rem; font-weight: 700;}}
+  .v-red {{color: {RED};}} .v-green {{color: {GREEN};}}
 
-  /* ---------- headings + progress bars ---------- */
-  .rd-h {{font-size: 1.1rem; font-weight: 800; color: {INK}; margin: 22px 0 2px;}}
-  .rd-div {{border: none; border-top: 2px solid; opacity: .35; margin: 4px 0 14px;}}
-  .rd-bar {{background: {LINE}; border-radius: 999px; height: 14px; overflow: hidden;
-            margin: 10px 0 6px;}}
-  .rd-fill {{height: 100%; border-radius: 999px; transition: width .3s ease;}}
-  .rd-quote {{font-size: 1rem; font-weight: 600; color: {INK}; line-height: 1.45;}}
+  /* ---- section titles ---- */
+  .v-h {{font-size: 1.02rem; font-weight: 800; color: {INK}; margin: 22px 0 10px;}}
 
-  /* brand-green buttons, whatever the theme */
+  /* ---- round icon buttons (Google Pay style) ---- */
+  .v-actions {{display: grid; grid-template-columns: repeat(4, 1fr);
+              gap: 8px; margin: 4px 0 2px;}}
+  .v-act {{text-align: center;}}
+  .v-circle {{width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 6px;
+             display: flex; align-items: center; justify-content: center;
+             font-size: 1.35rem; color: #fff; box-shadow: {SHADOW};}}
+  .v-act .lbl {{font-size: .68rem; font-weight: 700; color: {INK};
+               line-height: 1.18;}}
+
+  /* ---- transaction rows ---- */
+  .v-row {{display: flex; align-items: center; gap: 12px; padding: 11px 0;
+          border-bottom: 1px solid {LINE};}}
+  .v-row:last-child {{border-bottom: none;}}
+  .v-avatar {{width: 42px; height: 42px; border-radius: 50%; flex: 0 0 42px;
+             display: flex; align-items: center; justify-content: center;
+             font-weight: 800; color: #fff; font-size: 1rem;}}
+  .v-name {{font-size: .88rem; font-weight: 700; color: {INK};}}
+  .v-date {{font-size: .72rem; color: {SOFT};}}
+  .v-amt {{margin-left: auto; font-size: .92rem; font-weight: 800;}}
+
+  /* ---- profile / misc ---- */
+  .v-profile {{display: flex; align-items: center; gap: 14px;}}
+  .v-bigav {{width: 64px; height: 64px; border-radius: 50%; flex: 0 0 64px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; font-weight: 800; color: #fff;}}
+  .v-kv {{display: flex; justify-content: space-between; gap: 12px;
+         padding: 9px 0; border-bottom: 1px solid {LINE}; font-size: .86rem;}}
+  .v-kv:last-child {{border-bottom: none;}}
+  .v-kv .k {{color: {SOFT};}}
+  .v-kv .val {{color: {INK}; font-weight: 700; text-align: right;}}
+
+  /* ---- our own buttons stay on-brand ---- */
   .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {{
-      background: #12B76A; border-color: #12B76A; color: #fff; font-weight: 700;}}
+      background: {BLUE}; border-color: {BLUE}; color: #fff; font-weight: 700;
+      border-radius: 999px;}}
   .stButton > button[kind="primary"]:hover,
   .stFormSubmitButton > button[kind="primary"]:hover {{
-      background: #0E9F5B; border-color: #0E9F5B;}}
+      background: #1765CC; border-color: #1765CC;}}
+  .stFormSubmitButton > button {{border-radius: 999px;}}
 
-  /* phones */
+  /* ---- feature cards ---- */
+  .v-feat {{background: {CARD2}; border-radius: 18px; padding: 16px;
+           text-align: center; height: 100%;}}
+  .v-feat .ico {{font-size: 1.6rem;}}
+  .v-feat .t {{font-weight: 800; font-size: .88rem; color: {INK}; margin-top: 6px;}}
+  .v-feat .d {{font-size: .74rem; color: {SOFT}; margin-top: 3px;}}
+
+  /* ---- lock screen ---- */
+  .v-lock {{background: {CARD}; border: 1px solid {LINE}; border-radius: 26px;
+           padding: 34px 26px 26px; text-align: center; box-shadow: {SHADOW};
+           margin-top: 8vh;}}
+  .v-lock .big {{font-size: 3rem; line-height: 1;}}
+  .v-lock h2 {{margin: 12px 0 4px; font-size: 1.35rem; color: {INK};}}
+  .v-lock p {{margin: 0; color: {SOFT}; font-size: .86rem;}}
+
+  /* ---- phones ---- */
   @media (max-width: 480px) {{
-    .rd-brand h1 {{font-size: 1.35rem;}}
-    .rd-brand p {{font-size: .76rem;}}
-    .rd-page .t {{font-size: 1.1rem;}}
-    .rd-stat {{padding: 10px 11px; border-radius: 14px;}}
-    .rd-stat .rd-lab {{font-size: .56rem; letter-spacing: .03em;}}
-    .rd-stat .rd-sub {{font-size: .64rem;}}
-    .rd-stat .rd-badge {{font-size: .58rem; padding: 2px 6px; margin-top: 5px;}}
-    .rd-big {{font-size: 1.25rem;}}
-    .rd-h {{font-size: 1rem; margin-top: 18px;}}
+    .block-container {{padding-left: .9rem; padding-right: .9rem;}}
+    .v-hero {{font-size: 1.95rem;}}
+    .v-circle {{width: 46px; height: 46px; font-size: 1.15rem;}}
+    .v-act .lbl {{font-size: .6rem;}}
+    .v-card {{padding: 16px; border-radius: 18px;}}
   }}
-  {TONES}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------- helpers
-def rupees(x):
-    """1234.5 -> '₹1,234.50', 1234.0 -> '₹1,234'"""
-    x = round(float(x), 2)
-    return f"₹{x:,.0f}" if x.is_integer() else f"₹{x:,.2f}"
-
-
+# ================================================================ 2. helpers
 def stretch():
-    """Charts fill the column. Newer Streamlit renamed this kwarg."""
+    """Charts fill the column (new Streamlit renamed this kwarg)."""
     sig = inspect.signature(st.plotly_chart).parameters
     return {"width": "stretch"} if "width" in sig else {"use_container_width": True}
 
 
-def head(emoji, title, accent):
-    """Section heading + thin coloured divider."""
-    st.markdown(f'<div class="rd-h">{emoji} {title}</div>'
-                f'<hr class="rd-div" style="border-top-color:{accent}">',
-                unsafe_allow_html=True)
+def rupees(x):
+    """48250 -> '₹48,250' ; 1200.5 -> '₹1,200.50'"""
+    x = round(float(x), 2)
+    return f"₹{x:,.0f}" if x.is_integer() else f"₹{x:,.2f}"
 
 
-def card(html, tone=""):
-    """Rounded card. tone: g/y/r/b/p/o/k for a coloured background."""
-    cls = f"tone-{tone}" if tone else ""
-    st.markdown(f'<div class="rd-card {cls}">{html}</div>', unsafe_allow_html=True)
+def logo(size=46):
+    """Original SVG vault/shield mark: a shield with a keyhole."""
+    return f"""
+    <svg width="{size}" height="{size}" viewBox="0 0 48 48" fill="none"
+         style="display:block;flex:0 0 auto;overflow:visible"
+         xmlns="http://www.w3.org/2000/svg" aria-label="Self Healing Vault logo">
+      <defs>
+        <linearGradient id="vgrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="{BLUE}"/>
+          <stop offset="55%" stop-color="{PURPLE}"/>
+          <stop offset="100%" stop-color="{GREEN}"/>
+        </linearGradient>
+      </defs>
+      <path d="M24 3.5 6.5 9.4v13.9c0 9.6 6.9 17.2 17.5 21.2 10.6-4 17.5-11.6 17.5-21.2V9.4L24 3.5Z"
+            fill="url(#vgrad)"/>
+      <circle cx="24" cy="20.5" r="5.1" fill="#fff"/>
+      <path d="M21.7 23.5h4.6l1.5 8.2h-7.6l1.5-8.2Z" fill="#fff"/>
+    </svg>"""
 
 
-def stat_card(emoji, label, big, sub, badge="", tone="", big_cls=""):
-    """One of the three big stat cards at the top."""
-    cls = f"tone-{tone}" if tone else ""
-    chip = f'<span class="rd-badge {tone}">{badge}</span>' if badge else ""
-    st.markdown(f"""<div class="rd-stat {cls}">
-        <div class="rd-lab">{emoji} {label}</div>
-        <div class="rd-big {big_cls}">{big}</div>
-        <div class="rd-sub">{sub}</div>{chip}</div>""", unsafe_allow_html=True)
+def head():
+    """App header: logo + name + tagline."""
+    st.markdown(f"""<div class="vault-head">
+        <div class="mark">{logo(40)}</div>
+        <div class="txt"><div class="name">Self Healing Vault</div>
+             <div class="tag">Your money, quietly protected</div></div>
+    </div>""", unsafe_allow_html=True)
 
 
-def bar(pct, colour):
-    """Rounded progress bar in plain HTML."""
-    pct = max(0, min(pct, 100))
-    st.markdown(f'<div class="rd-bar"><div class="rd-fill" '
-                f'style="width:{pct:.0f}%;background:{colour}"></div></div>',
-                unsafe_allow_html=True)
+def actions(items):
+    """Row of round icon buttons, Google Pay style."""
+    cells = "".join(
+        f'<div class="v-act"><div class="v-circle" style="background:{c}">{e}</div>'
+        f'<div class="lbl">{t}</div></div>' for e, t, c in items)
+    st.markdown(f'<div class="v-actions">{cells}</div>', unsafe_allow_html=True)
 
 
-def status(ratio):
-    """🟢 safe / 🟡 close / 🔴 over from a spend ÷ budget ratio."""
-    if ratio <= 0.75:
-        return "🟢", "Safe", "g", G
-    if ratio <= 1:
-        return "🟡", "Close", "y", Y
-    return "🔴", "Over", "r", R
+def avatar_letter(name):
+    """First letter of a name, for the round avatar."""
+    return (re.sub(r"[^A-Za-z]", "", name) or "?")[0].upper()
 
 
-def pretty(fig, height=290):
-    """Transparent, theme-aware plotly layout."""
-    fig.update_layout(
-        template="plotly_dark" if DARK else "plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=6, r=6, t=28, b=6), font=dict(color=INK, size=12), height=height)
-    return fig
-
-
-# ---------------------------------------------------------------- sample data
-BASE_ROWS = [  # (days ago, merchant, category, amount)
-    (0, "Zomato", "Food", 386), (0, "Uber", "Transport", 248),
-    (1, "Starbucks", "Food", 341), (1, "BookMyShow", "Fun", 520),
-    (2, "Myntra", "Shopping", 1499), (3, "Jio recharge", "Bills", 299),
-    (4, "Swiggy", "Food", 457), (5, "Metro card", "Transport", 150),
-    (6, "Nykaa", "Shopping", 689), (8, "Coursera", "Study", 999),
-    (10, "Blinkit", "Food", 623), (12, "Spotify", "Bills", 119),
-    (15, "Decathlon", "Shopping", 1249), (18, "Cafe Coffee Day", "Food", 287),
-    (21, "Electricity bill", "Bills", 860),
-]
-CARRY_OVER = 1180.0   # spare change saved last month (a demo head start)
-
+# ================================================================ 3. sample data + memory
 ss = st.session_state
-ss.setdefault("extra", [])          # expenses added with Quick add
-ss.setdefault("transferred", 0.0)   # money moved from jar → pot
-ss.setdefault("celebrated", None)   # goal we already cheered for
-ss.setdefault("tip", "Small savings every day become big savings every year.")
-ss.setdefault("budget", 12000)      # settings live here so they survive page switches
-ss.setdefault("daily_limit", 600)
-ss.setdefault("parent_on", True)
 
-today = pd.Timestamp.today().normalize()
-df = pd.DataFrame(BASE_ROWS + ss.extra,
-                  columns=["days_ago", "Merchant", "Category", "Amount"])
-df["Amount"] = pd.to_numeric(df["Amount"])
-df["Round-up"] = df["Amount"].apply(lambda a: round(math.ceil(a / 10) * 10 - a, 2))
-df["Date"] = today - pd.to_timedelta(df["days_ago"], "D")
+ss.setdefault("unlocked", False)
+ss.setdefault("balance", 48250.0)
+ss.setdefault("show_balance", True)
+ss.setdefault("show_account", False)
+ss.setdefault("sent", [])          # transfers made in this session
+ss.setdefault("thanks", False)     # contact form submitted
 
-spent = df["Amount"].sum()
-today_spent = df.loc[df["days_ago"] == 0, "Amount"].sum()
-roundups = df["Round-up"].sum()
-days_covered = max(int(df["days_ago"].max()) + 1, 1)
+# Sample transactions: (name, days ago, amount, direction)
+BASE_TXN = [
+    ("Aarav Mehta", 0, 2500, "in"),
+    ("Priya Sharma", 1, 1200, "out"),
+    ("Zomato", 2, 480, "out"),
+    ("Neha Kulkarni", 3, 3500, "in"),
+    ("Rahul Verma", 5, 800, "out"),
+    ("Salary · Nimbus Tech", 7, 15000, "in"),
+    ("Metro Recharge", 9, 200, "out"),
+]
 
-jar = round(CARRY_OVER + roundups - ss.transferred, 2)   # spare change available
-pot = round(ss.transferred, 2)                          # already transferred
-total_saved = round(jar + pot, 2)
-daily_avg = spent / days_covered
-buffer_days = total_saved / daily_avg if daily_avg else 0
+PROFILE = {
+    "Full name": "Aanya R. Kulkarni",
+    "Account number": "50100 2847 3321",
+    "IFSC code": "VLTB0000123",
+    "Branch": "Bandra West, Mumbai",
+    "Account type": "Savings (Demo)",
+    "Phone": "+91 90000 12345",
+    "Email": "aanya.demo@example.com",
+}
 
-# toasts / balloons queued by the previous click
-flash = ss.pop("flash", None)
-party = ss.pop("party", False)
+if not ss.unlocked:
+    # ---------------- LOCK SCREEN ----------------
+    st.markdown(f"""<div class="v-lock">
+        <div class="big">{logo(66)}</div>
+        <h2>Self Healing Vault</h2>
+        <p>Enter your passcode to unlock</p>
+    </div>""", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------- sidebar
-with st.sidebar:
-    st.markdown("### ₹ Rupee Do")
-    page = st.radio("Pages", ["💰 My Money", "📊 Where It Goes", "🚀 Coming Soon"],
-                    label_visibility="collapsed")
-    st.divider()
-    st.caption(f"Spare change **{rupees(jar)}**\n\nSavings **{rupees(total_saved)}**")
-    if st.button("🔄 Reset demo", **stretch()):
-        for k in ("extra", "transferred", "celebrated", "flash", "party",
-                  "budget", "daily_limit", "parent_on"):
-            ss.pop(k, None)
-        st.rerun()
-    st.caption("Demo only · no real payments 🙅")
-
-# ---------------------------------------------------------------- brand banner
-st.markdown("""
-<div class="rd-brand">
-  <div class="row"><div style="font-size:1.7rem">₹</div>
-    <div><h1>Rupee Do</h1>
-      <p>Spare change · goals · 🟢🟡🔴 vibes</p></div></div>
-</div>
-""", unsafe_allow_html=True)
-
-if flash:
-    st.toast(flash, icon="✅")
-if party:
-    st.balloons()
-
-# ================================================================ PAGE 1
-if page == "💰 My Money":
-    st.markdown("""<div class="rd-page pg-money">
-        <div class="t">💰 My Money</div>
-        <div class="s">Spend, save, transfer — all live</div></div>""",
-                unsafe_allow_html=True)
-
-    budget_ratio = spent / ss.budget
-    icon, word, cls, colour = status(budget_ratio)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        stat_card("💸", "Spent", rupees(spent), f"of {rupees(ss.budget)}",
-                  f"{icon} {budget_ratio*100:.0f}%", cls)
-    with c2:
-        stat_card("🪙", "Savings", rupees(total_saved), "jar + pot",
-                  f"pot {rupees(pot)}", "g", "green")
-    with c3:
-        stat_card("🚦", "Budget", word, f"{rupees(max(ss.budget-spent, 0))} left",
-                  f"{icon} {budget_ratio*100:.0f}%", cls,
-                  {"g": "green", "y": "yellow", "r": "red"}[cls])
-
-    # ---- quick add
-    head("➕", "Quick add", G)
-    with st.form("add_expense", clear_on_submit=True):
-        f1, f2 = st.columns(2)
-        amount = f1.number_input("Amount (₹)", 1, 20000, 250, step=10)
-        category = f2.selectbox("Category", CATEGORIES)
-        merchant = st.text_input("Merchant", placeholder="e.g. Chai Point")
-        if st.form_submit_button("Add expense", type="primary", **stretch()):
-            ss.extra.append((0, merchant.strip() or "Quick add", category, float(amount)))
-            ss.flash = f"Added {rupees(amount)} · {category}"
+    with st.form("unlock"):
+        code = st.text_input("Passcode", type="password", placeholder="••••",
+                             max_chars=4, label_visibility="collapsed")
+        ok = st.form_submit_button("Unlock", type="primary", **stretch())
+    if ok:
+        if code == PASSCODE:
+            ss.unlocked = True
+            ss.flash, ss.party = "🔓 Vault unlocked", True
             st.rerun()
-
-    # ---- coin jar
-    head("🫙", "Coin jar", G)
-    jar_pct = jar / 1000 * 100
-    card(f"""<div class="rd-lab">Round-off savings</div>
-        <div class="rd-big">{rupees(jar)} <span class="rd-sub">/ ₹1,000</span></div>
-        <div class="rd-sub">{'Ready to transfer 🎉' if jar >= 1000 else rupees(1000-jar) + ' to go'}</div>""",
-         "g" if jar >= 1000 else "y")
-    bar(jar_pct, G if jar >= 1000 else Y)
-
-    t1, t2 = st.columns([1.2, 1])
-    with t1:
-        if st.button(f"🪙 Move {rupees(jar)} to pot", type="primary", **stretch(),
-                     disabled=jar < 1000):
-            ss.transferred += jar
-            ss.flash = f"Moved {rupees(jar)} to your savings pot!"
-            ss.party = True
-            st.rerun()
-    with t2:
-        st.caption("Unlocks at ₹1,000." if jar < 1000 else "Transfer unlocked ✅")
-
-    with st.expander(f"📄 All {len(df)} transactions"):
-        st.dataframe(df[["Date", "Merchant", "Category", "Amount", "Round-up"]]
-                     .sort_values("Date", ascending=False), hide_index=True, height=260,
-                     **stretch(),
-                     column_config={"Amount": st.column_config.NumberColumn(format="₹%d"),
-                                    "Round-up": st.column_config.NumberColumn(format="₹%.2f"),
-                                    "Date": st.column_config.DateColumn(format="DD MMM")})
-
-    # ---- goal
-    head("🎯", "Goal", G)
-    g1, g2 = st.columns([1.2, 1])
-    goal_name = g1.text_input("Goal name", "New phone 📱", label_visibility="collapsed",
-                              placeholder="Goal name")
-    goal_amount = g2.number_input("Goal amount", 500, 200000, 5000, step=500,
-                                  label_visibility="collapsed")
-    goal_pct = min(total_saved / goal_amount * 100, 100)
-    reached = total_saved >= goal_amount
-    card(f"""<div class="rd-lab">{goal_name or 'Goal'}</div>
-        <div class="rd-big">{rupees(min(total_saved, goal_amount))}
-          <span class="rd-sub">/ {rupees(goal_amount)}</span></div>
-        <div class="rd-sub">{goal_pct:.0f}% funded</div>""", "g" if reached else "")
-    bar(goal_pct, G if reached else Y)
-    if reached:
-        st.success("Goal reached 🎉")
-        if ss.celebrated != goal_amount:          # cheer once per goal
-            ss.celebrated = goal_amount
-            ss.party, ss.flash = True, "Goal reached 🎉"
-            st.rerun()
-    else:
-        st.caption(f"{rupees(goal_amount - total_saved)} to go.")
-
-    # ---- spending status
-    head("🚦", "Spending status", G)
-    ss.budget = st.slider("💸 Monthly budget", 2000, 50000, value=int(ss.budget),
-                          step=500, format="₹%d", key="budget_w")
-    ss.budget = ss.budget            # keep the plain copy for other pages
-    icon, word, cls, colour = status(spent / ss.budget)
-    card(f"""<div class="rd-lab">Monthly budget</div>
-        <div class="rd-big {dict(g='green', y='yellow', r='red')[cls]}">{icon} {word}</div>
-        <div class="rd-sub">{rupees(spent)} of {rupees(ss.budget)} ·
-          {spent/ss.budget*100:.0f}% used</div>""", cls)
-    bar(spent / ss.budget * 100, colour)
-
-# ================================================================ PAGE 2
-elif page == "📊 Where It Goes":
-    st.markdown("""<div class="rd-page pg-where">
-        <div class="t">📊 Where It Goes</div>
-        <div class="s">Charts, buffer and the parent switch</div></div>""",
-                unsafe_allow_html=True)
-
-    # ---- charts
-    head("🥧", "Spending by category", PURPLE)
-    by_cat = df.groupby("Category", as_index=False)["Amount"].sum()
-    donut = px.pie(by_cat, names="Category", values="Amount", hole=0.55,
-                   color_discrete_sequence=BRIGHT)
-    donut.update_traces(textinfo="percent", textposition="inside", textfont_size=13)
-    donut.update_layout(showlegend=True, height=360,
-                        legend=dict(orientation="h", y=-0.08, font=dict(size=11)),
-                        margin=dict(l=6, r=6, t=10, b=6))
-    st.plotly_chart(pretty(donut, 360), config={"displayModeBar": False}, **stretch())
-
-    days = pd.date_range(today - pd.Timedelta(days=13), today)
-    daily = df.groupby("Date")["Amount"].sum().reindex(days, fill_value=0).reset_index()
-    daily.columns = ["Date", "Amount"]
-    daily["col"] = ["rgba(148,163,184,.45)" if a == 0 else
-                    G if a < 0.8 * ss.daily_limit else
-                    Y if a <= ss.daily_limit else R for a in daily["Amount"]]
-    bars = go.Figure(go.Bar(x=daily["Date"], y=daily["Amount"], marker_color=daily["col"]))
-    bars.add_hline(y=ss.daily_limit, line_dash="dot", line_color=TXT["r"],
-                   annotation_text="limit", annotation_font_size=10)
-    bars.update_layout(title=dict(text="Last 14 days", font=dict(size=13)))
-    bars.update_xaxes(tickformat="%d %b", showgrid=False)
-    bars.update_yaxes(gridcolor="rgba(148,163,184,.2)")
-    st.plotly_chart(pretty(bars, 280), config={"displayModeBar": False}, **stretch())
-    st.caption("🟢 under your daily limit · 🟡 close · 🔴 over")
-
-    # ---- emergency buffer
-    head("🛟", "Emergency buffer", BLUE)
-    gcol = G if buffer_days >= 7 else Y if buffer_days >= 3 else R
-    gauge = go.Figure(go.Indicator(
-        mode="gauge+number", value=round(buffer_days, 1),
-        number={"suffix": " days", "font": {"size": 28, "color": INK}},
-        domain={"x": [0, 1], "y": [0, 1]},
-        gauge={"axis": {"range": [0, 30], "tickwidth": 0, "tickcolor": SOFT,
-                        "tickfont": {"size": 10, "color": SOFT}},
-               "bar": {"color": gcol, "thickness": 0.28},
-               "bgcolor": "rgba(0,0,0,0)", "borderwidth": 0,
-               "steps": [{"range": [0, 3], "color": f"rgba({TINT['r']},.22)"},
-                         {"range": [3, 7], "color": f"rgba({TINT['y']},.22)"},
-                         {"range": [7, 30], "color": f"rgba({TINT['g']},.22)"}],
-               "threshold": {"line": {"color": gcol, "width": 3},
-                             "thickness": 0.8, "value": buffer_days}}))
-    gauge.update_layout(margin=dict(l=10, r=10, t=10, b=0))
-    st.plotly_chart(pretty(gauge, 250), config={"displayModeBar": False}, **stretch())
-    st.caption(f"{rupees(total_saved)} saved ÷ {rupees(daily_avg)}/day · "
-               f"🔴 0–3 · 🟡 3–7 · 🟢 7–30 days")
-
-    # ---- parental control
-    head("👨‍👩‍👧", "Parental control", PINK)
-    # the widget owns its own key; mirror it into ss.parent_on so it works
-    # on the very first render too (no value= here, or the toggle would stick)
-    ss.parent_on = st.toggle("Parent mode", value=ss.get("parent_on", True),
-                             key="parent_toggle")
-    if ss.parent_on:
-        ss.daily_limit = st.slider("🚦 Daily spending limit", 100, 3000,
-                                   value=int(ss.daily_limit), step=50, format="₹%d",
-                                   key="limit_w")
-        ss.daily_limit = ss.daily_limit
-        day_ratio = today_spent / ss.daily_limit if ss.daily_limit else 0
-        d_icon, d_word, d_cls, d_colour = status(day_ratio)
-        card(f"""<div class="rd-lab">Today</div>
-            <div class="rd-big {dict(g='green', y='yellow', r='red')[d_cls]}">
-              {rupees(today_spent)} <span class="rd-sub">/ {rupees(ss.daily_limit)}</span></div>
-            <span class="rd-badge {d_cls}">{d_icon} {d_word}</span>""", d_cls)
-        bar(day_ratio * 100, d_colour)
-        if today_spent > ss.daily_limit:
-            st.error("🚨 Daily limit crossed — a demo alert went to your parent.")
         else:
-            st.caption(f"✅ {rupees(ss.daily_limit - today_spent)} left today.")
-    else:
-        st.caption("Parent mode is off — turn it on to set a daily limit.")
+            st.error("❌ Wrong passcode. Try again.")
+    st.caption("Demo passcode: **0000**")
 
-    # ---- tips
-    head("😹", "Money tip", ORANGE)
-    tips = [
-        "Your bank balance called. It's not angry, just disappointed.",
-        "Swiggy isn't a food app, it's a savings leak with great UI.",
-        "Budget = telling your money where to go instead of wondering where it went.",
-        "That ₹249 in-app purchase, 40 times, is a flight to Goa.",
-        "Compound interest is the only friend that gets richer while you sleep.",
-        "A free trial is a subscription with a countdown you will forget.",
-        "Retail therapy works. The bill is the side effect.",
-        "Round-ups: ₹4 here and ₹6 there is literally how phones get bought.",
-        "Your UPI PIN is not a personality. Don't share it.",
-        "Investing ₹500 today beats 'next month' for the 47th time.",
-    ]
-    with st.expander("😹 Tap for a random one-liner", expanded=True):
-        if st.button("Give me a tip", type="primary", **stretch()):
-            ss.tip = random.choice(tips)
-            ss.flash, ss.party = "Fresh tip served 😹", True
-            st.rerun()
-        card(f'<div class="rd-quote">“{ss.tip}”</div>', "o")
-
-# ================================================================ PAGE 3
 else:
-    st.markdown("""<div class="rd-page pg-soon">
-        <div class="t">🚀 Coming Soon</div>
-        <div class="s">What we're building next</div></div>""",
-                unsafe_allow_html=True)
+    # ---------------- SIDEBAR (only after unlocking) ----------------
+    with st.sidebar:
+        # simple text brand (the sidebar doesn't need the SVG mark)
+        st.markdown("**🛡️ Self Healing Vault**")
+        st.caption("Demo banking · sample data")
+        page = st.radio("Pages", ["🏠 Home", "👤 Personal Details",
+                                  "ℹ️ About Us", "🎧 Customer Care"],
+                        label_visibility="collapsed")
+        st.divider()
+        if st.button("🔒 Lock", **stretch()):
+            ss.unlocked = False
+            ss.flash = "Vault locked 🔒"
+            st.rerun()
+        st.caption("Demo only · no real payments")
 
-    soon = [
-        ("📈", "SIP investing", "From ₹500, in-app", "p"),
-        ("✈️", "Travel tickets", "Train · bus · flight", "b"),
-        ("🎁", "Gift cards", "₹100 to friends", "k"),
-        ("🔐", "Biometric login", "Face or fingerprint", "g"),
-        ("🧊", "Auto freeze", "Kill card scams", "b"),
-        ("🔁", "Autopay", "Rent + recharges", "o"),
-        ("📱", "Tap to pay", "Pay by tap", "k"),
-    ]
-    rows = [soon[i:i + 2] for i in range(0, len(soon), 2)]
-    for pair in rows:
-        cols = st.columns(len(pair))
-        for col, (emoji, title, blurb, tone) in zip(cols, pair):
-            with col:
-                st.markdown(f"""<div class="rd-card tone-{tone}"
-                    style="min-height:132px">
-                    <div style="font-size:1.7rem">{emoji}</div>
-                    <div style="font-weight:800;color:{INK};margin:4px 0 2px">{title}</div>
-                    <div style="font-size:.76rem;color:{SOFT}">{blurb}</div>
-                    <span class="rd-badge {tone}">🚧 Soon</span></div>""",
-                            unsafe_allow_html=True)
+    # toasts / balloons queued by the previous click
+    flash = ss.pop("flash", None)
+    party = ss.pop("party", False)
+    if flash:
+        st.toast(flash, icon="✅")
+    if party:
+        st.balloons()
 
-    card(f"""<div class="rd-lab">That's the demo</div>
-        <div class="rd-sub" style="margin-top:6px">Sample data only · no real payments ·
-        built with Streamlit + pandas + Plotly</div>""")
+    head()
+
+    # transactions dataframe: sample rows + transfers made this session
+    # (both are tuples, so pandas gets one clean shape)
+    sent_rows = [(r["Name"], r["DaysAgo"], r["Amount"], r["Dir"]) for r in ss.sent]
+    txn = pd.DataFrame(BASE_TXN + sent_rows, columns=["Name", "DaysAgo", "Amount", "Dir"])
+    txn["DaysAgo"] = pd.to_numeric(txn["DaysAgo"]).astype(int)
+    txn["Amount"] = pd.to_numeric(txn["Amount"]).astype(float)
+    txn["Date"] = (pd.Timestamp.today().normalize()
+                   - pd.to_timedelta(txn["DaysAgo"], unit="D")).dt.strftime("%d %b")
+
+    # ================================================================ HOME
+    if page == "🏠 Home":
+        masked = not ss.show_balance
+        shown = "₹ ••••••" if masked else rupees(ss.balance)
+
+        st.markdown(f"""<div class="v-card">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div class="v-label">Available balance</div>
+                <div class="v-hero">{shown}</div>
+                <div class="v-sub">Aanya R. Kulkarni · A/c •••• 3321</div>
+              </div>
+              <div style="font-size:1.9rem">🛡️</div>
+            </div></div>""", unsafe_allow_html=True)
+
+        # eye toggle + reset balance
+        e1, e2 = st.columns(2)
+        with e1:
+            if st.button("🙈 Hide balance" if ss.show_balance else "👁️ Show balance",
+                         **stretch()):
+                ss.show_balance = not ss.show_balance
+                st.rerun()
+        with e2:
+            if st.button("💳 Check balance", **stretch()):
+                ss.flash = f"Balance is {rupees(ss.balance)}"
+                st.rerun()
+
+        # round icon row
+        actions([("📤", "Send to bank", BLUE), ("💳", "Check balance", GREEN),
+                 ("🧾", "History", YELLOW), ("🔳", "Scan QR", RED)])
+
+        with st.expander("🧾 View history"):
+            for _, r in txn.iterrows():
+                sign = "+" if r.Dir == "in" else "−"
+                col = GREEN if r.Dir == "in" else RED
+                st.markdown(f"""<div class="v-row">
+                    <div class="v-avatar" style="background:{BLUE if r.Dir=='in' else PURPLE}">
+                      {avatar_letter(r.Name)}</div>
+                    <div><div class="v-name">{r.Name}</div>
+                         <div class="v-date">{r.Date} · {'Received' if r.Dir=='in' else 'Sent'}</div></div>
+                    <div class="v-amt" style="color:{col}">{sign}{rupees(r.Amount)}</div>
+                </div>""", unsafe_allow_html=True)
+            st.caption("🔳 Scan QR is a demo button — nothing is scanned.")
+
+        # ---- bank transfer
+        st.markdown('<div class="v-h">📤 Send to bank</div>', unsafe_allow_html=True)
+        with st.form("transfer", clear_on_submit=True):
+            n1, n2 = st.columns(2)
+            rec_name = n1.text_input("Recipient name", placeholder="e.g. Rohan Das")
+            bank = n2.text_input("Bank name", placeholder="e.g. HDFC Bank")
+            a1, a2 = st.columns([1.4, 1])
+            acc_no = a1.text_input("Account number", placeholder="11–16 digits",
+                                   max_chars=18)
+            ifsc = a2.text_input("IFSC code", placeholder="HDFC0001234",
+                                 max_chars=11)
+            amount = st.number_input("Amount (₹)", 1.0, 200000.0, 500.0, step=100.0)
+            send = st.form_submit_button("Send money", type="primary", **stretch())
+
+        if send:
+            errors = []
+            if not rec_name.strip():
+                errors.append("recipient name")
+            if not re.fullmatch(r"\d{9,18}", acc_no.replace(" ", "")):
+                errors.append("a valid account number (9–18 digits)")
+            if not re.fullmatch(r"[A-Za-z]{4}0[A-Za-z0-9]{6}", ifsc.strip()):
+                errors.append("a valid IFSC code (e.g. HDFC0001234)")
+            if amount > ss.balance:
+                st.error(f"❌ Not enough balance. You have {rupees(ss.balance)}, "
+                         f"but tried to send {rupees(amount)}.")
+            elif errors:
+                st.error("❌ Please check: " + ", ".join(errors) + ".")
+            else:
+                ss.balance -= float(amount)
+                ss.sent.append({"Name": rec_name.strip(), "DaysAgo": 0,
+                                "Amount": float(amount), "Dir": "out"})
+                ss.flash = f"Sent {rupees(amount)} to {rec_name.strip()}"
+                ss.party = True
+                st.rerun()
+
+        st.caption("Demo transfer only — no money actually moves.")
+
+        # ---- recent transactions
+        st.markdown('<div class="v-h">🕘 Recent transactions</div>',
+                    unsafe_allow_html=True)
+        rows = ""
+        for _, r in txn.sort_values("DaysAgo").iterrows():
+            sign = "+" if r.Dir == "in" else "−"
+            col = GREEN if r.Dir == "in" else RED
+            rows += f"""<div class="v-row">
+                <div class="v-avatar" style="background:{BLUE if r.Dir=='in' else PURPLE}">
+                  {avatar_letter(r.Name)}</div>
+                <div><div class="v-name">{r.Name}</div>
+                     <div class="v-date">{r.Date} · {'Received' if r.Dir=='in' else 'Sent'}</div></div>
+                <div class="v-amt" style="color:{col}">{sign}{rupees(r.Amount)}</div>
+            </div>"""
+        st.markdown(f'<div class="v-card" style="padding:6px 18px">{rows}</div>',
+                    unsafe_allow_html=True)
+
+        # small balance trend line (account balance only, no spending charts)
+        bal = [52000, 49500, 51200, 50400, ss.balance]
+        spark = go.Figure(go.Scatter(y=bal, mode="lines", line=dict(color=BLUE, width=3),
+                                     fill="tozeroy",
+                                     fillcolor="rgba(26,115,232,.14)"))
+        spark.update_layout(height=120, margin=dict(l=0, r=0, t=0, b=0), showlegend=False,
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            xaxis=dict(visible=False), yaxis=dict(visible=False))
+        st.markdown('<div class="v-h">📈 Balance trend</div>', unsafe_allow_html=True)
+        st.plotly_chart(spark, config={"displayModeBar": False}, **stretch())
+
+        if st.button("🔄 Restore demo balance", **stretch()):
+            ss.balance = 48250.0
+            ss.sent = []
+            ss.flash = "Demo balance restored"
+            st.rerun()
+
+    # ================================================================ PERSONAL DETAILS
+    elif page == "👤 Personal Details":
+        st.markdown('<div class="v-h">👤 My personal details</div>', unsafe_allow_html=True)
+
+        st.markdown(f"""<div class="v-card">
+            <div class="v-profile">
+              <div class="v-bigav" style="background:linear-gradient(135deg,{BLUE},{PURPLE})">
+                AK</div>
+              <div><div style="font-size:1.12rem;font-weight:800;color:{INK}">
+                    Aanya R. Kulkarni</div>
+                  <div class="v-sub">Savings account · verified ✅</div></div>
+            </div></div>""", unsafe_allow_html=True)
+
+        account_shown = "50100 2847 3321" if ss.show_account else "•••• •••• •••• 3321"
+        st.markdown(f"""<div class="v-card">
+            <div class="v-kv"><span class="k">Full name</span>
+                 <span class="val">{PROFILE['Full name']}</span></div>
+            <div class="v-kv"><span class="k">Account number</span>
+                 <span class="val">{account_shown}</span></div>
+            <div class="v-kv"><span class="k">IFSC code</span>
+                 <span class="val">{PROFILE['IFSC code']}</span></div>
+            <div class="v-kv"><span class="k">Branch</span>
+                 <span class="val">{PROFILE['Branch']}</span></div>
+            <div class="v-kv"><span class="k">Account type</span>
+                 <span class="val">{PROFILE['Account type']}</span></div>
+            <div class="v-kv"><span class="k">Phone</span>
+                 <span class="val">{PROFILE['Phone']}</span></div>
+            <div class="v-kv"><span class="k">Email</span>
+                 <span class="val">{PROFILE['Email']}</span></div>
+        </div>""", unsafe_allow_html=True)
+
+        if st.button("🙈 Hide account number" if ss.show_account
+                     else "👁️ Show account number", **stretch()):
+            ss.show_account = not ss.show_account
+            st.rerun()
+        st.caption("All details above are fake sample data for this demo.")
+
+    # ================================================================ ABOUT US
+    elif page == "ℹ️ About Us":
+        st.markdown('<div class="v-h">ℹ️ About Self Healing Vault</div>',
+                    unsafe_allow_html=True)
+        st.markdown(f"""<div class="v-card">
+            <div style="font-size:1.02rem;color:{INK};line-height:1.55">
+              Self Healing Vault is a friendly, no-fuss banking demo built for people
+              who just want to know where their money is. Check your balance, send a
+              demo transfer, and keep an eye on your account — all in one calm screen.
+            </div>
+            <div class="v-sub" style="margin-top:10px">
+              “Self healing” is our idea of banking that quietly repairs itself:
+              if something looks off, the vault gets locked first and asks questions
+              later.</div>
+        </div>""", unsafe_allow_html=True)
+
+        feats = [("🛡️", "Secure", "Passcode lock on every visit", BLUE),
+                 ("✨", "Simple", "Two taps to send money", GREEN),
+                 ("⚡", "Quick", "Balances update instantly", YELLOW)]
+        cols = st.columns(3)
+        for c, (ico, t, d, _) in zip(cols, feats):
+            with c:
+                st.markdown(f"""<div class="v-feat">
+                    <div class="ico">{ico}</div>
+                    <div class="t">{t}</div>
+                    <div class="d">{d}</div></div>""", unsafe_allow_html=True)
+
+        st.markdown(f"""<div class="v-card" style="margin-top:14px">
+            <div class="v-label">Please note</div>
+            <div class="v-sub" style="margin-top:6px">
+              This is a college demo project. It uses sample data, has no real bank
+              connection, and never moves real money.</div>
+        </div>""", unsafe_allow_html=True)
+
+    # ================================================================ CUSTOMER CARE
+    else:
+        st.markdown('<div class="v-h">🎧 Customer Care</div>', unsafe_allow_html=True)
+
+        faqs = [("How do I send money?",
+                 "Open Home, fill in the recipient, account number, IFSC and amount, "
+                 "then tap Send money. It is a demo — nothing leaves the app."),
+                ("Why was my transfer rejected?",
+                 "You can only send what you have. If the amount is more than your "
+                 "balance you will see a red message."),
+                ("Is my passcode stored anywhere?",
+                 "No. It lives in this app's session memory only, and the demo code "
+                 "is 0000."),
+                ("Can I use this with a real bank account?",
+                 "No. Every account, name and transaction here is fake sample data.")]
+        for q, a in faqs:
+            with st.expander(f"❓ {q}"):
+                st.write(a)
+
+        st.markdown('<div class="v-h">✉️ Contact us</div>', unsafe_allow_html=True)
+        with st.form("contact"):
+            c1, c2 = st.columns(2)
+            name = c1.text_input("Your name", placeholder="Aanya")
+            issue = c2.selectbox("Issue type", ["Transfer problem", "Login / passcode",
+                                                "Account details", "Something else"])
+            msg = st.text_area("Message", placeholder="Tell us what happened…", height=90)
+            sent_help = st.form_submit_button("Submit", type="primary", **stretch())
+        if sent_help:
+            if name.strip() and msg.strip():
+                ss.thanks = True
+                ss.flash = "Message sent — thank you!"
+            else:
+                st.error("❌ Please add your name and a short message.")
+
+        if ss.thanks:
+            st.success(f"✅ Thank you{' ' + name if name.strip() else ''}! Our demo team "
+                       "will get back to you (well, pretend to).")
+
+        st.markdown(f"""<div class="v-soft" style="margin-top:6px">
+            <div class="v-label">Support</div>
+            <div class="v-kv"><span class="k">Phone</span>
+                 <span class="val">1800 000 0000 (toll-free demo)</span></div>
+            <div class="v-kv"><span class="k">Email</span>
+                 <span class="val">help@selfhealingvault.demo</span></div>
+            <div class="v-kv"><span class="k">Hours</span>
+                 <span class="val">Mon–Sat · 9am to 7pm IST</span></div>
+        </div>""", unsafe_allow_html=True)
